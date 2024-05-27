@@ -1,0 +1,125 @@
+/**
+ * "Toggle Switch State" Puzzle
+ */
+
+ #include <EEPROM.h>
+
+//Constants
+
+//Number of switches
+ const byte numSwitches = 4;
+//Which pins switches are on
+ const byte switchPins[numSwitches] = {2, 4, 6, 8};
+//Pressing the button will save the current state
+ const byte savePin = A0;
+//Pin driven low when solved
+ const byte relayPin = A1;
+//Signature to indicate stored data is vaild
+ const byte eepromSignature = 121;
+
+//Global
+
+//Array to record last know state of every switch
+ bool lastSwitchState[numSwitches];
+//Current state of the puzzle
+ enum State {Initialising, Active, Solved};
+ State state = Initialising;
+//Desired solution - overridden by the EEPROM
+ bool solution[numSwitches] = {true, true, true, true};
+
+//Set the solution equal to the current state of switches and save to the EEPROM
+ void savePattern(){
+  //Erase current signature
+EEPROM.write(0,0);
+//Store current state of Switches into EEPROM
+  for(int i=0; i<numSwitches; i++){
+    solution[i] = lastSwitchState[i];
+    EEPROM.write(i+1, lastSwitchState[i]);
+  }
+//Write signature back to byte zero
+  EEPROM.write(0, eepromSignature);
+//Serial output
+  Serial.println(F("Pattern saved to EEPROM"));
+ }
+
+//Load saved pattern from EEPROM
+ void loadPattern(){
+//Check that it starts with a valid signature 
+ if (EEPROM.read(0) == eepromSignature){
+  for (int i=0; i<numSwitches; i++){
+      solution[i] = EEPROM.read(i+1);
+    }
+//Update values of count and Max delay
+    Serial.println(F("Solution Loaded From EEPROM"));
+  }
+  else {
+    Serial.println(F("EEPROM data not valid"));
+  }
+ }
+
+ void readState() {
+  for(int i=0; i<numSwitches; i++){
+    int switchValue = digitalRead(switchPins[i]);
+    if(switchValue != lastSwitchState[i]){
+      Serial.print("Switch Changed to");
+      Serial.println(switchValue);
+      lastSwitchState[i] = (bool)switchValue;
+    }
+  }
+ }
+//Check last know state of all switches against solution
+ bool isPuzzleSolved() {
+//Assume puzzle is solved
+  bool solved = true;
+//Check each pin state
+  for(int i=0; i<numSwitches; i++){
+//If any fail to match solution, then puzzle isn't solved
+    if(lastSwitchState[i] != solution[i]) {
+      solved = false;
+    }
+  }
+  return solved;
+ }
+
+//Initialize pins
+ void setup() {
+  for(int i=0; i<numSwitches; i++){
+    pinMode(switchPins[i], INPUT);
+  }
+  pinMode(savePin, INPUT_PULLUP);
+  pinMode(relayPin, OUTPUT);
+//Start the serial connection
+  Serial.begin(9600);
+  Serial.println("Starting connection");
+//Load saved solution from EEPROM
+  loadPattern();
+//Set the puzzle state
+  state = Active;
+ }
+
+ void loop(){
+//Get the current state
+  readState();
+//Is the save button pressed
+  if(digitalRead(savePin) == LOW) {
+//Simple debounce
+    while(digitalRead(savePin) == LOW) {delay(100); }
+//Save current pattern
+    savePattern();
+  }
+
+//Check if the puzzle is solved
+  bool puzzleIsSolved = isPuzzleSolved();
+//If it has just been solved
+  if(state == Active && puzzleIsSolved){
+    Serial.println(F("Puzzle has been solved!"));
+    digitalWrite(relayPin, LOW);
+    state = Solved;
+  }
+//If it had been solved and now no longer is
+  else if(state == Solved && !puzzleIsSolved){
+    Serial.println(F("Puzzle has been unsolved!"));
+    digitalWrite(relayPin, HIGH);
+    state = Active;
+  }
+ }
